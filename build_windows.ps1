@@ -23,7 +23,7 @@ Write-Host "Rust version: $(rustc --version)" -ForegroundColor Green
 Write-Host "Cargo version: $(cargo --version)" -ForegroundColor Green
 
 # Make sure we have the Windows target
-rustup target add x86_64-pc-windows-msvc --quiet 2>$null
+rustup target add x86_64-pc-windows-msvc 2>$null
 
 if ($Debug) {
     Write-Host "`nBuilding DEBUG build..." -ForegroundColor Yellow

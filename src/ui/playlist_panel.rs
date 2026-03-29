@@ -7,7 +7,6 @@ use crate::app::MelodiaApp;
 pub fn show(app: &mut MelodiaApp, ui: &mut Ui, playlist_id: &str) {
     let playlist_id = playlist_id.to_string();
 
-    // Clone data we need for display (avoids borrow conflict)
     let (pl_name, pl_track_ids) = match app.playlist_store.get(&playlist_id) {
         Some(pl) => (pl.name.clone(), pl.track_ids.clone()),
         None => {
@@ -21,13 +20,12 @@ pub fn show(app: &mut MelodiaApp, ui: &mut Ui, playlist_id: &str) {
         ui.colored_label(TEXT_PRIMARY, RichText::new(&pl_name).size(20.0).strong());
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.colored_label(TEXT_SECONDARY, format!("{} tracks", pl_track_ids.len()));
-
             if !pl_track_ids.is_empty() {
                 if ui.add(
                     Button::new(RichText::new("▶  Play All").size(12.0))
                         .fill(ACCENT)
                 ).clicked() {
-                    app.play_playlist(&playlist_id);
+                    app.play_playlist(&playlist_id.clone());
                 }
             }
         });
@@ -45,34 +43,48 @@ pub fn show(app: &mut MelodiaApp, ui: &mut Ui, playlist_id: &str) {
         return;
     }
 
-    // Resolve track IDs to tracks
-    let resolved: Vec<(usize, String, String, String, String)> = pl_track_ids
-        .iter()
-        .enumerate()
-        .filter_map(|(pl_pos, tid)| {
-            app.library.iter().enumerate().find(|(_, t)| &t.id == tid)
-                .map(|(lib_idx, t)| (
-                    pl_pos,
-                    tid.clone(),
-                    t.display_title().to_string(),
-                    t.display_artist().to_string(),
-                    t.format_duration(),
-                ))
+    // Resolve track IDs → display data (owned, no borrow on app later)
+    struct RowData {
+        pl_pos:     usize,
+        track_id:   String,
+        title:      String,
+        artist:     String,
+        duration:   String,
+        is_current: bool,
+    }
+
+    let current_id = app.queue.current_track_id().map(|s| s.to_string());
+
+    let rows: Vec<RowData> = pl_track_ids.iter().enumerate().filter_map(|(pl_pos, tid)| {
+        app.library.iter().find(|t| &t.id == tid).map(|t| RowData {
+            pl_pos,
+            track_id:   tid.clone(),
+            title:      t.display_title().to_string(),
+            artist:     t.display_artist().to_string(),
+            duration:   t.format_duration(),
+            is_current: current_id.as_deref() == Some(tid.as_str()),
         })
-        .collect();
+    }).collect();
 
     let row_height = 42.0;
+
+    let mut action_remove:    Option<usize>         = None;
+    let mut action_play_from: Option<usize>         = None;
+    let mut action_move:      Option<(usize, usize)>= None;
+
+    let drag_id_base = Id::new("pl_drag");
 
     ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
-            let mut remove_idx: Option<usize> = None;
-            let mut move_from: Option<usize> = None;
-            let mut move_to: Option<usize> = None;
+            let dragged_id  = ui.ctx().dragged_id();
+            let pointer_pos = ui.ctx().pointer_hover_pos();
 
-            for (pl_pos, tid, title, artist, dur) in &resolved {
-                let is_current = app.queue.current_track_id() == Some(tid.as_str());
-                let bg = if is_current { BG_SELECTED_DIM } else if *pl_pos % 2 == 0 { BG_DARK } else { BG_PANEL };
+            for row in &rows {
+                let i  = row.pl_pos;
+                let bg = if row.is_current { BG_SELECTED_DIM }
+                         else if i % 2 == 0 { BG_DARK }
+                         else { BG_PANEL };
 
                 let row_rect = ui.available_rect_before_wrap();
                 let row_rect = Rect::from_min_size(row_rect.min, vec2(row_rect.width(), row_height));
@@ -83,60 +95,81 @@ pub fn show(app: &mut MelodiaApp, ui: &mut Ui, playlist_id: &str) {
                     ui.painter().rect_filled(row_rect, 0.0, BG_HOVER.linear_multiply(0.4));
                 }
 
+                // Drop indicator
+                if dragged_id.is_some() && resp.hovered() {
+                    ui.painter().hline(
+                        row_rect.x_range(),
+                        row_rect.top(),
+                        Stroke::new(2.0, ACCENT),
+                    );
+                }
+
                 ui.allocate_ui_at_rect(row_rect, |ui| {
                     ui.horizontal_centered(|ui| {
                         ui.add_space(8.0);
-                        let num_str = if is_current { "▶".to_string() } else { format!("{}", pl_pos + 1) };
-                        let num_col = if is_current { ACCENT_LIGHT } else { TEXT_DIM };
-                        ui.add_sized([32.0, row_height], Label::new(RichText::new(num_str).color(num_col).size(12.0)));
+                        let num_str  = if row.is_current { "▶".to_string() } else { format!("{}", i + 1) };
+                        let num_col  = if row.is_current { ACCENT_LIGHT } else { TEXT_DIM };
+                        ui.add_sized([32.0, row_height],
+                            Label::new(RichText::new(num_str).color(num_col).size(12.0)));
 
-                        let title_col = if is_current { ACCENT_LIGHT } else { TEXT_PRIMARY };
+                        let title_col = if row.is_current { ACCENT_LIGHT } else { TEXT_PRIMARY };
                         ui.with_layout(Layout::top_down(Align::LEFT), |ui| {
-                            ui.add(Label::new(RichText::new(title).color(title_col).size(13.0)).truncate(true));
-                            ui.colored_label(TEXT_DIM, RichText::new(artist).size(11.0));
+                            ui.add(Label::new(RichText::new(&row.title).color(title_col).size(13.0))
+                                .truncate(true));
+                            ui.colored_label(TEXT_DIM, RichText::new(&row.artist).size(11.0));
                         });
 
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             ui.add_space(8.0);
-                            if ui.add(Button::new(RichText::new("✕").color(TEXT_DIM).size(11.0)).frame(false)).clicked() {
-                                remove_idx = Some(*pl_pos);
+                            if ui.add(Button::new(
+                                RichText::new("✕").color(TEXT_DIM).size(11.0)).frame(false)
+                            ).clicked() {
+                                action_remove = Some(i);
                             }
                             ui.add_space(8.0);
-                            ui.colored_label(TEXT_DIM, dur);
+                            ui.colored_label(TEXT_DIM, &row.duration);
                         });
                     });
                 });
 
-                if resp.double_clicked() {
-                    // Find lib index
-                    if let Some(lib_idx) = app.library.iter().position(|t| &t.id == tid) {
-                        app.play_playlist_from(&playlist_id, *pl_pos);
-                    }
-                }
+                if resp.double_clicked() { action_play_from = Some(i); }
 
-                // Drag to reorder
-                if resp.hovered() && ui.memory(|m| m.is_anything_being_dragged()) {
-                    move_to = Some(*pl_pos);
-                }
                 if resp.drag_started() {
-                    move_from = Some(*pl_pos);
+                    ui.ctx().set_dragged_id(drag_id_base.with(i));
+                    ui.ctx().data_mut(|d| d.insert_temp::<usize>(Id::new("pl_drag_src"), i));
                 }
             }
 
-            // Apply mutations
-            if let Some(idx) = remove_idx {
-                if let Some(pl) = app.playlist_store.get_mut(&playlist_id) {
-                    pl.track_ids.remove(idx);
-                }
-                app.save_playlists();
-            }
-            if let (Some(f), Some(t)) = (move_from, move_to) {
-                if f != t {
-                    if let Some(pl) = app.playlist_store.get_mut(&playlist_id) {
-                        pl.move_track(f, t);
+            // Resolve drop
+            if ui.input(|inp| inp.pointer.any_released()) {
+                let src = ui.ctx().data_mut(|d| d.remove_temp::<usize>(Id::new("pl_drag_src")));
+                if let (Some(src_i), Some(pos)) = (src, pointer_pos) {
+                    for j in 0..rows.len() {
+                        let check_y_top = j as f32 * (row_height + 2.0);
+                        let check_y_bot = check_y_top + row_height + 2.0;
+                        if pos.y > check_y_top && pos.y <= check_y_bot && src_i != j {
+                            action_move = Some((src_i, j));
+                            break;
+                        }
                     }
-                    app.save_playlists();
                 }
             }
         });
+
+    // Apply deferred mutations
+    if let Some(idx) = action_remove {
+        if let Some(pl) = app.playlist_store.get_mut(&playlist_id) {
+            pl.track_ids.remove(idx);
+        }
+        app.save_playlists();
+    }
+    if let Some((f, t)) = action_move {
+        if let Some(pl) = app.playlist_store.get_mut(&playlist_id) {
+            pl.move_track(f, t);
+        }
+        app.save_playlists();
+    }
+    if let Some(start) = action_play_from {
+        app.play_playlist_from(&playlist_id, start);
+    }
 }

@@ -201,7 +201,6 @@ pub fn show(app: &mut MelodiaApp, ui: &mut Ui) {
                 let vol_resp = ui.add(
                     Slider::new(&mut vol, 0.0..=1.5)
                         .show_value(false)
-                        .desired_width(80.0)
                 );
                 if vol_resp.changed() {
                     app.player.set_volume(vol);

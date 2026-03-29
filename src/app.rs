@@ -2,11 +2,10 @@
 // Central application state, logic, and eframe integration
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use std::thread;
 
-use egui::{Context, TextureHandle, TextureOptions, ColorImage};
+use egui::{Context, TextureHandle, TextureOptions};
 
 use crate::audio::{AudioPlayer, PlaybackState};
 use crate::config::Config;
@@ -311,9 +310,8 @@ impl MelodiaApp {
 
     // ── Album art ─────────────────────────────────────────────────────────
 
-    fn update_album_art_for_track(&mut self, track: &Track) {
-        // Will be called from update() where we have ctx
-        // Store bytes, texture will be created in update()
+    fn update_album_art_for_track(&mut self, _track: &Track) {
+        // Texture is created lazily in maybe_update_album_art() each frame
     }
 
     fn load_album_art_texture(&mut self, ctx: &Context, art_bytes: &[u8]) {
