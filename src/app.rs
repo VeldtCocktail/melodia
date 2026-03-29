@@ -63,6 +63,7 @@ pub struct MelodiaApp {
 
     // Album art texture (for current track)
     pub current_album_art_texture: Option<TextureHandle>,
+    current_album_art_track_id: Option<String>,
 
     // Playlists
     pub playlist_store: PlaylistStore,
@@ -104,6 +105,7 @@ impl MelodiaApp {
             new_playlist_name: String::new(),
             show_queue_panel: false,
             current_album_art_texture: None,
+            current_album_art_track_id: None,
             playlist_store,
             config,
             frame_count: 0,
@@ -322,6 +324,7 @@ impl MelodiaApp {
                 color_image,
                 TextureOptions::LINEAR,
             ));
+            ctx.request_repaint(); // Ensure new art shows up immediately
         }
     }
 
@@ -392,20 +395,28 @@ impl MelodiaApp {
     fn maybe_update_album_art(&mut self, ctx: &Context) {
         let current_id = self.queue.current_track_id().map(|s| s.to_string());
         if let Some(id) = current_id {
+            // Check if track changed since last art load
+            let art_stale = self.current_album_art_track_id.as_deref() != Some(id.as_str());
             if let Some(track) = self.library.iter().find(|t| t.id == id) {
                 if let Some(ref art) = track.album_art_bytes.clone() {
-                    // Only reload if texture doesn't exist
-                    if self.current_album_art_texture.is_none() {
+                    if art_stale || self.current_album_art_texture.is_none() {
                         self.load_album_art_texture(ctx, art);
+                        self.current_album_art_track_id = Some(id);
+                        ctx.request_repaint();
                     }
                 } else if !track.metadata_loaded {
-                    // metadata not loaded yet — clear art
+                    // metadata not loaded yet — keep existing art
                 } else {
-                    self.current_album_art_texture = None;
+                    if self.current_album_art_texture.is_some() {
+                        self.current_album_art_texture = None;
+                        ctx.request_repaint();
+                    }
+                    self.current_album_art_track_id = Some(id);
                 }
             }
         } else {
             self.current_album_art_texture = None;
+            self.current_album_art_track_id = None;
         }
     }
 }
@@ -426,6 +437,28 @@ fn rand_usize() -> usize {
 impl eframe::App for MelodiaApp {
     fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
         self.tick(ctx);
+
+        // ── Keyboard shortcuts ────────────────────────────────────────────
+        let has_focus = ctx.memory(|mem| mem.focused().is_some());
+        if !has_focus {
+            let space  = ctx.input(|i| i.key_pressed(egui::Key::Space));
+            let right  = ctx.input(|i| i.key_pressed(egui::Key::ArrowRight));
+            let left   = ctx.input(|i| i.key_pressed(egui::Key::ArrowLeft));
+            let up     = ctx.input(|i| i.key_pressed(egui::Key::ArrowUp));
+            let down   = ctx.input(|i| i.key_pressed(egui::Key::ArrowDown));
+
+            if space { self.toggle_pause(); }
+            if right { self.next_track(); }
+            if left  { self.prev_track(); }
+            if up {
+                let v = (self.player.volume() + 0.05).min(1.5);
+                self.player.set_volume(v);
+            }
+            if down {
+                let v = (self.player.volume() - 0.05).max(0.0);
+                self.player.set_volume(v);
+            }
+        }
 
         // Handle album art after track change (needs ctx)
         // done in tick via maybe_update_album_art

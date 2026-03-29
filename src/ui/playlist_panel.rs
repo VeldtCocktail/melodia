@@ -114,9 +114,12 @@ pub fn show(app: &mut MelodiaApp, ui: &mut Ui, playlist_id: &str) {
 
                         let title_col = if row.is_current { ACCENT_LIGHT } else { TEXT_PRIMARY };
                         ui.with_layout(Layout::top_down(Align::LEFT), |ui| {
+                            // Center the two lines vertically in the row
+                            ui.add_space(8.0);
                             ui.add(Label::new(RichText::new(&row.title).color(title_col).size(13.0))
                                 .truncate(true));
-                            ui.colored_label(TEXT_DIM, RichText::new(&row.artist).size(11.0));
+                            ui.add(Label::new(RichText::new(&row.artist).color(TEXT_DIM).size(11.0))
+                                .truncate(true));
                         });
 
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {

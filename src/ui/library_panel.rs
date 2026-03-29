@@ -134,36 +134,71 @@ pub fn show(app: &mut MelodiaApp, ui: &mut Ui) {
                          else { BG_PANEL };
 
                 let row_rect = ui.available_rect_before_wrap();
-                let row_rect = Rect::from_min_size(row_rect.min, vec2(row_rect.width(), row_height));
+                let row_rect = Rect::from_min_size(row_rect.min, vec2(ui.available_width(), row_height));
 
+                // Allocate the full row rect for interaction
                 let resp = ui.allocate_rect(row_rect, Sense::click());
                 ui.painter().rect_filled(row_rect, 0.0, bg);
                 if resp.hovered() {
                     ui.painter().rect_filled(row_rect, 0.0, BG_HOVER.linear_multiply(0.5));
                 }
 
-                ui.allocate_ui_at_rect(row_rect, |ui| {
-                    ui.horizontal_centered(|ui| {
-                        ui.add_space(8.0);
+                // Draw content using painter directly to avoid sub-widget click interception
+                let num_col     = if row.is_playing { ACCENT_LIGHT } else { TEXT_DIM };
+                let title_color = if row.is_playing { ACCENT_LIGHT } else { TEXT_PRIMARY };
 
-                        let num_col     = if row.is_playing { ACCENT_LIGHT } else { TEXT_DIM };
-                        let title_color = if row.is_playing { ACCENT_LIGHT } else { TEXT_PRIMARY };
+                let y_center = row_rect.center().y;
+                let mut x = row_rect.left() + 8.0;
 
-                        ui.add_sized([col_widths[0], row_height],
-                            Label::new(RichText::new(&row.num_str).color(num_col).size(12.0)));
-                        ui.add_sized([col_widths[1], row_height],
-                            Label::new(RichText::new(&row.title).color(title_color).size(13.0))
-                                .truncate(true));
-                        ui.add_sized([col_widths[2], row_height],
-                            Label::new(RichText::new(&row.artist).color(TEXT_SECONDARY).size(13.0))
-                                .truncate(true));
-                        ui.add_sized([col_widths[3], row_height],
-                            Label::new(RichText::new(&row.album).color(TEXT_DIM).size(12.0))
-                                .truncate(true));
-                        ui.add_sized([col_widths[4], row_height],
-                            Label::new(RichText::new(&row.duration).color(TEXT_DIM).size(12.0)));
-                    });
-                });
+                // # column
+                ui.painter().text(
+                    pos2(x + col_widths[0] * 0.5, y_center),
+                    Align2::CENTER_CENTER,
+                    &row.num_str,
+                    FontId::proportional(12.0),
+                    num_col,
+                );
+                x += col_widths[0];
+
+                // Title column
+                let _title_rect = Rect::from_min_size(pos2(x, row_rect.top()), vec2(col_widths[1], row_height));
+                ui.painter().text(
+                    pos2(x + 4.0, y_center),
+                    Align2::LEFT_CENTER,
+                    truncate_text(&row.title, col_widths[1] - 8.0, 13.0),
+                    FontId::proportional(13.0),
+                    title_color,
+                );
+                x += col_widths[1];
+
+                // Artist column
+                ui.painter().text(
+                    pos2(x + 4.0, y_center),
+                    Align2::LEFT_CENTER,
+                    truncate_text(&row.artist, col_widths[2] - 8.0, 13.0),
+                    FontId::proportional(13.0),
+                    TEXT_SECONDARY,
+                );
+                x += col_widths[2];
+
+                // Album column
+                ui.painter().text(
+                    pos2(x + 4.0, y_center),
+                    Align2::LEFT_CENTER,
+                    truncate_text(&row.album, col_widths[3] - 8.0, 12.0),
+                    FontId::proportional(12.0),
+                    TEXT_DIM,
+                );
+                x += col_widths[3];
+
+                // Duration column
+                ui.painter().text(
+                    pos2(x + col_widths[4] * 0.5, y_center),
+                    Align2::CENTER_CENTER,
+                    &row.duration,
+                    FontId::proportional(12.0),
+                    TEXT_DIM,
+                );
 
                 if resp.double_clicked() { action_play   = Some(row.lib_idx); }
                 if resp.clicked()        { action_select = Some(row.track_id.clone()); }
@@ -220,4 +255,18 @@ fn column_widths(total: f32) -> [f32; 5] {
 fn header_col(ui: &mut Ui, text: &str, width: f32) {
     ui.add_sized([width, 20.0],
         Label::new(RichText::new(text).color(TEXT_DIM).size(11.0)));
+}
+
+/// Simple text truncation: approximate max chars based on available width and font size.
+fn truncate_text(text: &str, max_width: f32, font_size: f32) -> String {
+    // Approximate character width as ~0.55 * font_size
+    let char_w = font_size * 0.55;
+    let max_chars = (max_width / char_w) as usize;
+    if text.len() <= max_chars || max_chars < 4 {
+        text.to_string()
+    } else {
+        let mut s: String = text.chars().take(max_chars - 1).collect();
+        s.push('…');
+        s
+    }
 }
