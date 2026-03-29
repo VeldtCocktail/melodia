@@ -2,6 +2,7 @@
 // Audio playback via rodio — thread-safe player handle
 
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
+use cpal::traits::{DeviceTrait, HostTrait};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
@@ -21,6 +22,7 @@ pub struct AudioPlayer {
     // OutputStream must be kept alive for audio to play
     _stream: OutputStream,
     stream_handle: OutputStreamHandle,
+    pub device_name: String,
 }
 
 struct PlayerInner {
@@ -37,7 +39,34 @@ struct PlayerInner {
 
 impl AudioPlayer {
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        let (stream, stream_handle) = OutputStream::try_default()?;
+        // Log available hosts and devices for diagnostics
+        #[cfg(all(debug_assertions, feature = "debug-logging"))]
+        {
+            let host_ids = cpal::available_hosts();
+            println!("Available audio hosts: {:?}", host_ids);
+            for host_id in host_ids {
+                let host = cpal::host_from_id(host_id)?;
+                let devices = host.output_devices()?;
+                for (i, device) in devices.enumerate() {
+                    if let Ok(name) = device.name() {
+                        println!("  Host {:?} Device {}: {}", host_id, i, name);
+                    }
+                }
+            }
+        }
+
+        let (stream, stream_handle) = OutputStream::try_default().map_err(|e| {
+            format!("Failed to open default audio output: {}", e)
+        })?;
+
+        // Try to get a human-readable name for the default device
+        let device_name = match cpal::default_host().default_output_device() {
+            Some(device) => device.name().unwrap_or_else(|_| "Unknown Device".to_string()),
+            None => "No Device Found".to_string(),
+        };
+
+        println!("Selected Audio Device: {}", device_name);
+
         let inner = Arc::new(Mutex::new(PlayerInner {
             sink: None,
             state: PlaybackState::Stopped,
@@ -46,7 +75,12 @@ impl AudioPlayer {
             track_duration: None,
             volume: 1.0,
         }));
-        Ok(AudioPlayer { inner, _stream: stream, stream_handle })
+        Ok(AudioPlayer { 
+            inner, 
+            _stream: stream, 
+            stream_handle,
+            device_name 
+        })
     }
 
     /// Load and start playing a file immediately.

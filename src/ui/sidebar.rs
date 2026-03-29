@@ -91,6 +91,14 @@ pub fn show(app: &mut MelodiaApp, ui: &mut Ui) {
                     ui.colored_label(TEXT_DIM, RichText::new(format!("📁 {}", name)).size(11.0));
                 });
             }
+
+            // Audio device info
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                ui.add_space(12.0);
+                ui.colored_label(TEXT_DIM, RichText::new(format!("🔊 {}", app.player.device_name)).size(10.0));
+            });
+            ui.add_space(4.0);
         });
     });
 }

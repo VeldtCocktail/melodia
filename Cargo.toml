@@ -17,6 +17,7 @@ egui_extras = { version = "0.27", features = ["image"] }
 
 # Audio playback
 rodio = { version = "0.19", features = ["mp3", "flac", "vorbis", "wav"] }
+cpal = "0.15"
 
 # Audio metadata (tags: title, artist, album, cover art)
 lofty = "0.19"
