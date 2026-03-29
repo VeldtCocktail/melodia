@@ -87,6 +87,17 @@ if [ "$INSTALL" -eq 1 ]; then
     echo -e "\n${YELLOW}Installing to /usr/local/bin/melodia...${NC}"
     sudo install -m 755 "$OUT" /usr/local/bin/melodia
 
+    # Install application icon
+    ICON_DESTS=(
+        "/usr/local/share/icons/hicolor/256x256/apps"
+        "/usr/share/icons/hicolor/256x256/apps"
+    )
+    for ICON_DIR in "${ICON_DESTS[@]}"; do
+        echo -e "${YELLOW}Installing icon to $ICON_DIR...${NC}"
+        sudo mkdir -p "$ICON_DIR"
+        sudo cp src/ui/logo.png "$ICON_DIR/melodia.png"
+    done
+
     # Create .desktop file for application menu
     DESKTOP_DIR="$HOME/.local/share/applications"
     mkdir -p "$DESKTOP_DIR"
@@ -95,13 +106,19 @@ if [ "$INSTALL" -eq 1 ]; then
 Name=Melodia
 Comment=High-performance music player
 Exec=/usr/local/bin/melodia
-Icon=audio-x-generic
+Icon=melodia
 Terminal=false
 Type=Application
 Categories=Audio;Music;Player;
 Keywords=music;player;audio;mp3;flac;
+StartupWMClass=melodia
 EOF
     chmod +x "$DESKTOP_DIR/melodia.desktop"
+    
+    # Update icon cache
+    echo -e "${YELLOW}Updating icon cache...${NC}"
+    sudo gtk-update-icon-cache -f -t /usr/local/share/icons/hicolor 2>/dev/null || true
+    sudo gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
     update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
 
     echo -e "${GREEN}Installed! Launch with: melodia${NC}"

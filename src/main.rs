@@ -30,27 +30,21 @@ fn main() -> eframe::Result<()> {
     };
 
     eframe::run_native(
-        "Melodia",
+        "melodia",
         options,
         Box::new(|cc| Box::new(app::MelodiaApp::new(cc))),
     )
 }
 
 fn load_app_icon() -> egui::IconData {
-    // Embedded minimal icon (16x16 RGBA)
-    let size = 32u32;
-    let mut rgba = Vec::with_capacity((size * size * 4) as usize);
-    for y in 0..size {
-        for x in 0..size {
-            let cx = x as f32 - size as f32 / 2.0;
-            let cy = y as f32 - size as f32 / 2.0;
-            let dist = (cx * cx + cy * cy).sqrt();
-            if dist < size as f32 / 2.0 - 1.0 {
-                rgba.extend_from_slice(&[138, 43, 226, 255]); // purple
-            } else {
-                rgba.extend_from_slice(&[0, 0, 0, 0]);
-            }
-        }
+    let icon_bytes = include_bytes!("ui/logo.png");
+    let image = image::load_from_memory(icon_bytes)
+        .expect("Failed to load icon")
+        .to_rgba8();
+    let (width, height) = image.dimensions();
+    egui::IconData {
+        rgba: image.into_raw(),
+        width,
+        height,
     }
-    egui::IconData { rgba, width: size, height: size }
 }
