@@ -1,0 +1,69 @@
+[package]
+name = "melodia"
+version = "1.0.0"
+edition = "2021"
+authors = ["Melodia Player"]
+description = "A high-performance cross-platform music player"
+
+[[bin]]
+name = "melodia"
+path = "src/main.rs"
+
+[dependencies]
+# GUI framework - egui works on both Windows and Linux
+eframe = { version = "0.27", features = ["default_fonts"] }
+egui = "0.27"
+egui_extras = { version = "0.27", features = ["image"] }
+
+# Audio playback
+rodio = { version = "0.19", features = ["mp3", "flac", "vorbis", "wav"] }
+
+# Audio metadata (tags: title, artist, album, cover art)
+lofty = "0.19"
+
+# Image decoding for album art
+image = { version = "0.25", features = ["jpeg", "png", "gif", "bmp", "webp"] }
+
+# Serialization for playlist persistence
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# File system utilities
+walkdir = "2"
+
+# Threading / state
+parking_lot = "0.12"
+
+# Time
+instant = "0.1"
+
+# Unique IDs for tracks/playlists
+uuid = { version = "1", features = ["v4"] }
+
+# Cross-platform config/data directories
+dirs = "5"
+
+# Native file picker dialog (open folder)
+rfd = "0.14"
+
+# Logging (debug builds)
+env_logger = { version = "0.11", optional = true }
+
+# Byte order utilities (for audio)
+byteorder = "1"
+
+[features]
+default = []
+debug-logging = ["env_logger"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+[target.'cfg(windows)'.dependencies]
+# Windows-specific: nothing extra needed, eframe handles it
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Linux: nothing extra, rodio uses ALSA/PulseAudio via cpal
