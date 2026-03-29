@@ -1,6 +1,5 @@
 /target
 Cargo.lock
-*.exe
 *.pdb
 *.d
 .DS_Store
