@@ -2,8 +2,8 @@
 // Central application state, logic, and eframe integration
 
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use egui::{Context, TextureHandle, TextureOptions};
 
@@ -48,7 +48,9 @@ pub struct MelodiaApp {
     pub current_track_path: Option<PathBuf>,
     pub shuffle: bool,
     pub repeat: bool,
-    pub shuffle_history: Vec<usize>, // for un-shuffle
+    pub shuffle_history: Vec<usize>,  // for un-shuffle
+    pub playback_history: Vec<usize>, // Stack for backward navigation
+    pub forward_history: Vec<usize>,  // Stack for forward navigation
 
     // Back-button logic: if >10s elapsed, restart; else go to previous
     pub track_start_time: Option<Instant>,
@@ -97,6 +99,8 @@ impl MelodiaApp {
             shuffle: config.shuffle,
             repeat: config.repeat,
             shuffle_history: Vec::new(),
+            playback_history: Vec::new(),
+            forward_history: Vec::new(),
             track_start_time: None,
             active_panel: Panel::Library,
             selected_track_id: None,
@@ -153,12 +157,16 @@ impl MelodiaApp {
 
     /// Play from library at given index; replaces queue with full library starting there.
     pub fn play_from_library(&mut self, lib_idx: usize) {
-        let items: Vec<QueueItem> = self.library.iter().map(|t| QueueItem {
-            track_id: t.id.clone(),
-            display_title: t.display_title().to_string(),
-            display_artist: t.display_artist().to_string(),
-            duration_str: t.format_duration(),
-        }).collect();
+        let items: Vec<QueueItem> = self
+            .library
+            .iter()
+            .map(|t| QueueItem {
+                track_id: t.id.clone(),
+                display_title: t.display_title().to_string(),
+                display_artist: t.display_artist().to_string(),
+                duration_str: t.format_duration(),
+            })
+            .collect();
         self.queue.set(items, lib_idx);
         self.play_current_queue_item();
     }
@@ -198,16 +206,24 @@ impl MelodiaApp {
             None => return,
         };
 
-        let items: Vec<QueueItem> = track_ids.iter().filter_map(|tid| {
-            self.library.iter().find(|t| &t.id == tid).map(|t| QueueItem {
-                track_id: t.id.clone(),
-                display_title: t.display_title().to_string(),
-                display_artist: t.display_artist().to_string(),
-                duration_str: t.format_duration(),
+        let items: Vec<QueueItem> = track_ids
+            .iter()
+            .filter_map(|tid| {
+                self.library
+                    .iter()
+                    .find(|t| &t.id == tid)
+                    .map(|t| QueueItem {
+                        track_id: t.id.clone(),
+                        display_title: t.display_title().to_string(),
+                        display_artist: t.display_artist().to_string(),
+                        duration_str: t.format_duration(),
+                    })
             })
-        }).collect();
+            .collect();
 
-        if items.is_empty() { return; }
+        if items.is_empty() {
+            return;
+        }
         self.queue.set(items, start);
         self.play_current_queue_item();
     }
@@ -222,6 +238,13 @@ impl MelodiaApp {
             Some(t) => t.clone(),
             None => return,
         };
+
+        // Push current queue index to playback history before playing
+        if let Some(current_idx) = self.queue.current_index {
+            self.playback_history.push(current_idx);
+            // Clear forward history when playing a new track
+            self.forward_history.clear();
+        }
 
         if let Err(e) = self.player.play(&track.path, track.duration) {
             eprintln!("Playback error: {e}");
@@ -244,7 +267,15 @@ impl MelodiaApp {
     }
 
     pub fn next_track(&mut self) {
-        if self.shuffle {
+        if !self.forward_history.is_empty() {
+            // Go to next track in forward history
+            let next_idx = self.forward_history.pop();
+            if let Some(idx) = next_idx {
+                self.playback_history.push(idx);
+                self.queue.jump_to(idx);
+                self.play_current_queue_item();
+            }
+        } else if self.shuffle {
             self.play_shuffle_next();
         } else if self.queue.has_next() {
             self.queue.advance();
@@ -257,7 +288,8 @@ impl MelodiaApp {
 
     /// Previous: if >10s elapsed, restart; else go to previous track.
     pub fn prev_track(&mut self) {
-        let elapsed = self.track_start_time
+        let elapsed = self
+            .track_start_time
             .map(|t| t.elapsed())
             .unwrap_or(Duration::ZERO);
 
@@ -270,9 +302,16 @@ impl MelodiaApp {
                 }
                 self.track_start_time = Some(Instant::now());
             }
-        } else if self.queue.has_prev() {
-            self.queue.go_prev();
-            self.play_current_queue_item();
+        } else if !self.playback_history.is_empty() {
+            // Go to previous track in history
+            if let Some(current_idx) = self.queue.current_index {
+                self.forward_history.push(current_idx);
+            }
+            let prev_idx = self.playback_history.pop();
+            if let Some(idx) = prev_idx {
+                self.queue.jump_to(idx);
+                self.play_current_queue_item();
+            }
         } else {
             // At start — restart regardless
             if let Some(path) = self.current_track_path.clone() {
@@ -284,7 +323,9 @@ impl MelodiaApp {
     }
 
     fn play_shuffle_next(&mut self) {
-        if self.library.is_empty() { return; }
+        if self.library.is_empty() {
+            return;
+        }
         let idx = (rand_usize() % self.library.len()) as usize;
         self.queue.jump_to(idx);
         self.play_current_queue_item();
@@ -319,11 +360,8 @@ impl MelodiaApp {
     fn load_album_art_texture(&mut self, ctx: &Context, art_bytes: &[u8]) {
         if let Some(img) = metadata::decode_album_art(art_bytes) {
             let color_image = metadata::to_egui_image(img);
-            self.current_album_art_texture = Some(ctx.load_texture(
-                "album_art",
-                color_image,
-                TextureOptions::LINEAR,
-            ));
+            self.current_album_art_texture =
+                Some(ctx.load_texture("album_art", color_image, TextureOptions::LINEAR));
             ctx.request_repaint(); // Ensure new art shows up immediately
         }
     }
@@ -427,7 +465,9 @@ static RAND_STATE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::
 
 fn rand_usize() -> usize {
     let prev = RAND_STATE.load(std::sync::atomic::Ordering::Relaxed);
-    let next = prev.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+    let next = prev
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407);
     RAND_STATE.store(next, std::sync::atomic::Ordering::Relaxed);
     next as usize
 }
@@ -441,15 +481,21 @@ impl eframe::App for MelodiaApp {
         // ── Keyboard shortcuts ────────────────────────────────────────────
         let has_focus = ctx.memory(|mem| mem.focused().is_some());
         if !has_focus {
-            let space  = ctx.input(|i| i.key_pressed(egui::Key::Space));
-            let right  = ctx.input(|i| i.key_pressed(egui::Key::ArrowRight));
-            let left   = ctx.input(|i| i.key_pressed(egui::Key::ArrowLeft));
-            let up     = ctx.input(|i| i.key_pressed(egui::Key::ArrowUp));
-            let down   = ctx.input(|i| i.key_pressed(egui::Key::ArrowDown));
+            let space = ctx.input(|i| i.key_pressed(egui::Key::Space));
+            let right = ctx.input(|i| i.key_pressed(egui::Key::ArrowRight));
+            let left = ctx.input(|i| i.key_pressed(egui::Key::ArrowLeft));
+            let up = ctx.input(|i| i.key_pressed(egui::Key::ArrowUp));
+            let down = ctx.input(|i| i.key_pressed(egui::Key::ArrowDown));
 
-            if space { self.toggle_pause(); }
-            if right { self.next_track(); }
-            if left  { self.prev_track(); }
+            if space {
+                self.toggle_pause();
+            }
+            if right {
+                self.next_track();
+            }
+            if left {
+                self.prev_track();
+            }
             if up {
                 let v = (self.player.volume() + 0.05).min(1.5);
                 self.player.set_volume(v);
@@ -482,12 +528,10 @@ impl eframe::App for MelodiaApp {
             });
 
         // ── Central panel (main content area) ────────────────────────────
-        egui::CentralPanel::default().show(ctx, |ui| {
-            match self.active_panel.clone() {
-                Panel::Library => ui::library_panel::show(self, ui),
-                Panel::Queue => ui::queue_panel::show(self, ui),
-                Panel::Playlist(id) => ui::playlist_panel::show(self, ui, &id),
-            }
+        egui::CentralPanel::default().show(ctx, |ui| match self.active_panel.clone() {
+            Panel::Library => ui::library_panel::show(self, ui),
+            Panel::Queue => ui::queue_panel::show(self, ui),
+            Panel::Playlist(id) => ui::playlist_panel::show(self, ui, &id),
         });
     }
 
