@@ -16,7 +16,10 @@ egui = "0.27"
 egui_extras = { version = "0.27", features = ["image"] }
 
 # Audio playback
-rodio = { version = "0.19", features = ["mp3", "flac", "vorbis", "wav"] }
+# symphonia-aac adds AAC decoder (needed for .m4a / .aac files)
+# symphonia-isomp4 adds the MP4/M4A container demuxer
+# symphonia-mp3 replaces the default minimp3 decoder with a higher-quality one
+rodio = { version = "0.21", features = ["mp3", "flac", "vorbis", "wav", "symphonia-aac", "symphonia-isomp4", "symphonia-mp3"] }
 cpal = "0.15"
 
 # Audio metadata (tags: title, artist, album, cover art)

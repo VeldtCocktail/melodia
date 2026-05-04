@@ -1,7 +1,7 @@
 // melodia/src/audio.rs
 // Audio playback via rodio — thread-safe player handle
 
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
+use rodio::{Decoder, OutputStreamBuilder, Sink};
 use cpal::traits::{DeviceTrait, HostTrait};
 use std::fs::File;
 use std::io::BufReader;
@@ -20,8 +20,7 @@ pub enum PlaybackState {
 pub struct AudioPlayer {
     inner: Arc<Mutex<PlayerInner>>,
     // OutputStream must be kept alive for audio to play
-    _stream: OutputStream,
-    stream_handle: OutputStreamHandle,
+    _stream: rodio::OutputStream,
     pub device_name: String,
 }
 
@@ -55,7 +54,7 @@ impl AudioPlayer {
             }
         }
 
-        let (stream, stream_handle) = OutputStream::try_default().map_err(|e| {
+        let stream = OutputStreamBuilder::open_default_stream().map_err(|e| {
             format!("Failed to open default audio output: {}", e)
         })?;
 
@@ -77,8 +76,7 @@ impl AudioPlayer {
         }));
         Ok(AudioPlayer { 
             inner, 
-            _stream: stream, 
-            stream_handle,
+            _stream: stream,
             device_name 
         })
     }
@@ -95,7 +93,7 @@ impl AudioPlayer {
             s.stop();
         }
 
-        let sink = Sink::try_new(&self.stream_handle)?;
+        let sink = Sink::connect_new(&self._stream.mixer());
         sink.set_volume(inner.volume);
         sink.append(source);
 
@@ -217,16 +215,15 @@ impl AudioPlayer {
                 if let Some(ref s) = inner.sink {
                     s.stop();
                 }
-                if let Ok(sink) = Sink::try_new(&self.stream_handle) {
-                    sink.set_volume(inner.volume);
-                    use rodio::Source;
-                    sink.append(source.skip_duration(target));
-                    inner.sink = Some(sink);
-                    inner.state = PlaybackState::Playing;
-                    inner.play_started = Some(Instant::now());
-                    inner.position_offset = target;
-                    inner.track_duration = track_duration;
-                }
+                let sink = Sink::connect_new(&self._stream.mixer());
+                sink.set_volume(inner.volume);
+                use rodio::Source;
+                sink.append(source.skip_duration(target));
+                inner.sink = Some(sink);
+                inner.state = PlaybackState::Playing;
+                inner.play_started = Some(Instant::now());
+                inner.position_offset = target;
+                inner.track_duration = track_duration;
             }
         }
     }
